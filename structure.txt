@@ -1,0 +1,91 @@
+D:.
+|   .env
+|   requirements.txt
+|   roadmap.txt
+|   start_listening.mp3
+|   start_speaking.mp3
+|   structure.txt
+|   test.db
+|   test.py
+|
++---.vscode
+|       settings.json
+|
++---jafar
+|   |   config.py
+|   |   jafar.py
+|   |   settings.py
+|   |   start_listening.mp3
+|   |   start_speaking.mp3
+|   |
+|   +---.vs
+|   |       slnx.sqlite
+|   |
+|   +---api
+|   |       crud.py
+|   |       database.py
+|   |       main.py
+|   |       models.py
+|   |       schemas.py
+|   |       __init__.py
+|   |
+|   +---archive-py
+|   |   |   jaafar.py
+|   |   |   jafar.py
+|   |   |   main.py
+|   |   |
+|   |   \---__pycache__
+|   |           jafar.cpython-310.pyc
+|   |
+|   +---assets
+|   |       response.mp3
+|   |       start_listening.mp3
+|   |       start_speaking.mp3
+|   |
+|   +---assistant
+|   |       config.py
+|   |       main.py
+|   |       response_generation.py
+|   |       voice_output.py
+|   |       voice_recognition.py
+|   |
+|   +---model
+|   |   +---vosk-model-ru-0.22-compile
++---plug_in
+|   \---report
+|       |   crud.py
+|       |   database.py
+|       |   gpt.py
+|       |   main.py
+|       |   models.py
+|       |   requirements.txt
+|       |   schemas.py
+|       |
+|       \---__pycache__
+|               crud.cpython-310.pyc
+|               database.cpython-310.pyc
+|               main.cpython-310.pyc
+|               models.cpython-310.pyc
+|               schemas.cpython-310.pyc
+|
+|   +---examples
+|   |       play_wave.py
+|
+|   +---sphinx
+|   |       conf.py
+|   |       examples.rst
+|   |       index.rst
+|
+|   +---src
+|   |   \---pyaudio
+|   |           device_api.c
+\---requirements
+        package-new-proj.txt
+        package-old-proj.txt
+        requirements-full.txt
+        requirements-full2.txt
+        requirements-new-proj.txt
+        requirements-old-proj.txt
+        requirements.in
+        requirements.txt
+        requirements2.txt

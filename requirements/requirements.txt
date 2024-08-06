@@ -1,0 +1,7 @@
+openai
+speechrecognition
+pillow
+requests
+pygame
+python-dotenv
+pyaudio
