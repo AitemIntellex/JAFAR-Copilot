@@ -17,7 +17,7 @@ import os
 import threading
 import re
 from dotenv import load_dotenv
-
+import numpy as np
 # Словарь ключевых слов для трейдинга
 trading_keywords = {
     'buy': ['купить', 'открой позицию', 'покупка'],
@@ -49,7 +49,7 @@ def open_position(symbol, volume, order_type, reason):
         type=order_type,
         price=price,
         deviation=20,
-        magic=123456,
+        magic=1234567,
         comment=reason
     )
 
@@ -76,6 +76,26 @@ trading_context = False
 
 # Инициализация модели Vosk
 model = vosk.Model(r"d:\\model\\vosk-model-small-ru-0.22")
+
+
+def get_openai_response(prompt):
+    logging.info(f"Отправка запроса в OpenAI: {prompt}")
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=450
+        )
+        answer = response.choices[0].message["content"].strip()
+        logging.info(f"Ответ от OpenAI: {answer}")
+        return answer
+    except Exception as e:
+        logging.error(f"Ошибка при работе с OpenAI: {e}")
+        return "Извините, произошла ошибка."
+
 
 # Функция для воспроизведения звука
 def play_sound(sound_file):
@@ -134,7 +154,7 @@ async def text_to_speech(text):
     data = {
         "input": text,
         "model": "tts-1",
-        "voice": "echo"
+        "voice": "onyx"
     }
     logging.info(f"Отправка запроса на преобразование текста в речь: {text}")
     try:
@@ -144,7 +164,7 @@ async def text_to_speech(text):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio_file:
             temp_audio_file.write(response.content)
             temp_audio_file_path = temp_audio_file.name
-        logging.info(f"Текст преобразован в речь и сохранен как {temp_audio_file_path}")
+        logging.info(f"text to speexh {temp_audio_file_path}")
 
         pygame.mixer.music.load(temp_audio_file_path)
         pygame.mixer.music.play()
@@ -156,6 +176,133 @@ async def text_to_speech(text):
             pygame.time.Clock().tick(10)
     except requests.RequestException as e:
         logging.error(f"Ошибка преобразования текста в речь: {e}")
+#
+import MetaTrader5 as mt5
+import numpy as np
+import logging
+
+# Настройка MetaTrader 5 для получения данных
+def get_market_data(symbol, timeframe, num_bars):
+    """
+    Получение рыночных данных для анализа.
+    """
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, num_bars)
+    if rates is None or len(rates) == 0:
+        logging.error(f"Ошибка при получении данных для {symbol}")
+        return None
+    return rates
+
+# Определение ключевых зон (максимумы и минимумы)
+def find_key_zones(rates):
+    """
+    Нахождение ключевых зон ликвидности на основе экстремумов свечей.
+    """
+    highs = [rate['high'] for rate in rates]
+    lows = [rate['low'] for rate in rates]
+
+    # Нахождение максимумов и минимумов
+    max_high = max(highs)
+    min_low = min(lows)
+
+    return max_high, min_low
+
+def calculate_atr(symbol, timeframe, period=14):
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, period + 1)
+    if rates is None or len(rates) == 0:
+        logging.error(f"Ошибка при получении данных для {symbol}")
+        return None
+
+    high_prices = np.array([rate['high'] for rate in rates])
+    low_prices = np.array([rate['low'] for rate in rates])
+    close_prices = np.array([rate['close'] for rate in rates])
+
+    # Рассчитываем ATR вручную
+    tr = np.maximum(high_prices - low_prices, np.maximum(abs(high_prices - close_prices[:-1]), abs(low_prices - close_prices[:-1])))
+    atr = np.mean(tr[-period:])  # Среднее за период
+
+    return atr
+
+def get_atr_info(symbol):
+    daily_atr = calculate_atr(symbol, mt5.TIMEFRAME_D1)  # Дневной ATR
+    m15_atr = calculate_atr(symbol, mt5.TIMEFRAME_M15)    # ATR для 15 минут
+
+    if daily_atr is None or m15_atr is None:
+        logging.error(f"Не удалось рассчитать ATR для {symbol}")
+        return None
+
+    current_price = mt5.symbol_info_tick(symbol).bid
+    if current_price is None:
+        logging.error(f"Не удалось получить информацию о символе {symbol}. Проверьте подключение или правильность символа.")
+        return None
+
+    # Рассчитываем данные о прошедших и оставшихся тиках
+    daily_atr_ticks = daily_atr / mt5.symbol_info(symbol).point
+    m15_atr_ticks = m15_atr / mt5.symbol_info(symbol).point
+
+    atr_info = {
+        "daily_atr": daily_atr,
+        "m15_atr": m15_atr,
+        "daily_atr_ticks": daily_atr_ticks,
+        "m15_atr_ticks": m15_atr_ticks,
+        "current_price": current_price
+    }
+    return atr_info
+
+def create_atr_report(atr_info):
+    report = (f"Дневной ATR: {atr_info['daily_atr']} ({atr_info['daily_atr_ticks']} тиков)\n"
+              f"15-минутный ATR: {atr_info['m15_atr']} ({atr_info['m15_atr_ticks']} тиков)\n"
+              f"Текущая цена: {atr_info['current_price']}")
+    return report
+
+def create_technical_report(symbol):
+    atr_info = get_atr_info(symbol)
+    if atr_info is None:
+        return "Не удалось получить данные ATR."
+
+    report = create_atr_report(atr_info)
+    return report
+
+def summarize_technical_data(result):
+    recommendations = []
+
+    if result['atr']['daily_atr'] > 20:
+        recommendations.append("Сильный дневной тренд, учитывайте ATR.")
+    if result['atr']['m15_atr'] > 5:
+        recommendations.append("Возможны сильные колебания в краткосрочной перспективе.")
+
+    detailed_analysis = f"Дневной ATR: {result['atr']['daily_atr']}, 15-минутный ATR: {result['atr']['m15_atr']}"
+
+    return recommendations, detailed_analysis
+
+# Определение зон дисбаланса
+def find_imbalance_zones(rates):
+    """
+    Поиск зон дисбаланса (разрывы между свечами).
+    """
+    imbalances = []
+    for i in range(1, len(rates)):
+        if rates[i]['low'] > rates[i-1]['high']:  # Bullish imbalance
+            imbalances.append((rates[i-1]['high'], rates[i]['low']))
+        elif rates[i]['high'] < rates[i-1]['low']:  # Bearish imbalance
+            imbalances.append((rates[i]['low'], rates[i-1]['high']))
+
+    return imbalances
+
+# Пример вызова функций
+symbol = "XAUUSDm"
+timeframe = mt5.TIMEFRAME_M15
+num_bars = 100
+
+# Получаем данные с MetaTrader 5
+market_data = get_market_data(symbol, timeframe, num_bars)
+
+if market_data:
+    max_high, min_low = find_key_zones(market_data)
+    imbalances = find_imbalance_zones(market_data)
+
+    print(f"Ключевые зоны для {symbol}: Максимум: {max_high}, Минимум: {min_low}")
+    print(f"Зоны дисбаланса: {imbalances}")
+
 
 # Функция для технического анализа (определение зоны спроса и предложения)
 def detect_supply_demand_zone(symbol, timeframe):
@@ -380,12 +527,121 @@ def perform_multi_indicator_analysis(symbol):
         "RSI": rsi,
         "Average Volume": avg_volume
     }
+def analyze_combined_indicators(symbol):
+    atr_info = get_atr_info(symbol)
+    macd, signal = calculate_macd(symbol)
+    rsi = calculate_rsi(symbol)
+    stochastic = calculate_stochastic(symbol)
+    fib_levels = calculate_fibonacci(symbol)
+
+    # Начало вывода анализа
+    combined_report = f"Технический анализ для {symbol}:\n\n"
+
+    # ATR
+    if atr_info:
+        combined_report += f"Дневной ATR: {atr_info['daily_atr']} тиков\n"
+        combined_report += f"15-минутный ATR: {atr_info['m15_atr']} тиков\n"
+    else:
+        combined_report += "ATR данные недоступны.\n"
+
+    # MACD
+    if macd is not None:
+        if macd[-1] > signal[-1]:
+            combined_report += "MACD показывает восходящий тренд.\n"
+        else:
+            combined_report += "MACD показывает нисходящий тренд.\n"
+
+    # RSI
+    if rsi:
+        if rsi > 70:
+            combined_report += "RSI: Перекупленность. Возможен разворот или коррекция.\n"
+        elif rsi < 30:
+            combined_report += "RSI: Перепроданность. Возможен рост.\n"
+        else:
+            combined_report += f"RSI: Нейтральная зона ({rsi}).\n"
+
+    # Стохастик
+    if stochastic:
+        k, d = stochastic
+        combined_report += f"Стохастик: K = {k}, D = {d}\n"
+
+    # Фибоначчи
+    if fib_levels:
+        combined_report += f"Уровни Фибоначчи: 23.6%: {fib_levels['23.6%']}, 38.2%: {fib_levels['38.2%']}, 50%: {fib_levels['50%']}, 61.8%: {fib_levels['61.8%']}\n"
+
+    return combined_report
+def generate_recommendations(symbol):
+    combined_report = analyze_combined_indicators(symbol)
+    recommendations = []
+
+    # Пример рекомендаций на основе индикаторов
+    if "восходящий тренд" in combined_report and "RSI: Нейтральная зона" in combined_report:
+        recommendations.append("Рассмотрите возможность покупки, восходящий тренд и RSI в нейтральной зоне.")
+    if "нисходящий тренд" in combined_report and "RSI: Перекупленность" in combined_report:
+        recommendations.append("Рассмотрите возможность продажи, нисходящий тренд и RSI в зоне перекупленности.")
+
+    return recommendations, combined_report
+
+def analyze_multiple_symbols(symbols):
+    full_report = ""
+    for symbol in symbols:
+        recommendations, analysis = generate_recommendations(symbol)
+        full_report += f"--- {symbol} ---\n"
+        full_report += analysis + "\n"
+        full_report += f"Рекомендации: {', '.join(recommendations)}\n\n"
+
+    return full_report
+
+def analyze_combined_indicators(symbol):
+    atr_info = get_atr_info(symbol)
+    macd, signal = calculate_macd(symbol)
+    rsi = calculate_rsi(symbol)
+    stochastic = calculate_stochastic(symbol)
+    fib_levels = calculate_fibonacci(symbol)
+
+    # Начало вывода анализа
+    combined_report = f"Технический анализ для {symbol}:\n\n"
+
+    # ATR
+    if atr_info:
+        combined_report += f"Дневной ATR: {atr_info['daily_atr']} тиков\n"
+        combined_report += f"15-минутный ATR: {atr_info['m15_atr']} тиков\n"
+    else:
+        combined_report += "ATR данные недоступны.\n"
+
+    # MACD
+    if macd is not None:
+        if macd[-1] > signal[-1]:
+            combined_report += "MACD показывает восходящий тренд.\n"
+        else:
+            combined_report += "MACD показывает нисходящий тренд.\n"
+
+    # RSI
+    if rsi:
+        if rsi > 70:
+            combined_report += "RSI: Перекупленность. Возможен разворот или коррекция.\n"
+        elif rsi < 30:
+            combined_report += "RSI: Перепроданность. Возможен рост.\n"
+        else:
+            combined_report += f"RSI: Нейтральная зона ({rsi}).\n"
+
+    # Стохастик
+    if stochastic:
+        k, d = stochastic
+        combined_report += f"Стохастик: K = {k}, D = {d}\n"
+
+    # Фибоначчи
+    if fib_levels:
+        combined_report += f"Уровни Фибоначчи: 23.6%: {fib_levels['23.6%']}, 38.2%: {fib_levels['38.2%']}, 50%: {fib_levels['50%']}, 61.8%: {fib_levels['61.8%']}\n"
+
+    return combined_report
+
 def analyze_with_openai(result):
     """
     Отправляет данные анализа в OpenAI для получения прогноза, используя chat-комплит endpoint.
     """
     messages = [
-        {"role": "system", "content": "You are a financial analyst assistant."},
+        {"role": "system", "content": "You are a financial analyst assistant and trader."},
         {"role": "user", "content": (
             f"Проанализируй следующие данные для {result['symbol']}:\n"
             f"Зона предложения: {result['supply_zone']}, Зона спроса: {result['demand_zone']}\n"
@@ -408,12 +664,25 @@ def analyze_with_openai(result):
             max_tokens=500
         )
         analysis = response['choices'][0]['message']['content'].strip()
-        logging.info(f"Ответ от OpenAI: {analysis}")
+        logging.info(f"Ответ от AI: {analysis}")
         return analysis
     except Exception as e:
         logging.error(f"Ошибка при работе с OpenAI: {e}")
         return "Не удалось получить анализ от OpenAI"
 
+def find_order_blocks(rates):
+    """
+    Определение блоков ордеров на основе движений цены.
+    """
+    order_blocks = []
+    for i in range(1, len(rates)):
+        # Поиск крупных движений и их анализ
+        if rates[i]['close'] > rates[i]['open'] and rates[i]['high'] > rates[i-1]['high']:
+            order_blocks.append(("Bullish Order Block", rates[i]['open'], rates[i]['high']))
+        elif rates[i]['close'] < rates[i]['open'] and rates[i]['low'] < rates[i-1]['low']:
+            order_blocks.append(("Bearish Order Block", rates[i]['open'], rates[i]['low']))
+
+    return order_blocks
 
 # Функция для проведения технического анализа
 import talib
@@ -438,43 +707,76 @@ async def run_technical_analysis(symbols):
 
 
 def technical_analysis(symbol):
-    logging.info(f"Анализируем {symbol}...")
+    logging.info(f"Анализируем {symbol} по стратегии ICT...")
 
-    # 1. Анализ по SMC
+    # 1. Анализ по SMC (Supply/Demand Zones)
     supply_zone, demand_zone = detect_supply_demand_zone(symbol, mt5.TIMEFRAME_M15)
     if supply_zone and demand_zone:
         logging.info(f"SMC для {symbol}: Зона предложения: {supply_zone}, Зона спроса: {demand_zone}")
     else:
         logging.warning(f"Не удалось получить зоны спроса и предложения для {symbol}")
 
-    # 2. Анализ по MACD
+    # 2. Определение ключевых зон ликвидности (Liquidity Zones)
+    market_data = get_market_data(symbol, mt5.TIMEFRAME_M15, 100)
+
+    # Исправленная проверка данных
+    if market_data is not None and len(market_data) > 0:
+        max_high, min_low = find_key_zones(market_data)
+        logging.info(f"Ключевые зоны ликвидности для {symbol}: Максимум: {max_high}, Минимум: {min_low}")
+    else:
+        logging.warning(f"Не удалось получить рыночные данные для {symbol}")
+
+    # 3. Поиск зон дисбаланса (Imbalance Zones)
+    imbalances = find_imbalance_zones(market_data)
+    if imbalances:
+        logging.info(f"Зоны дисбаланса для {symbol}: {imbalances}")
+    else:
+        logging.warning(f"Не найдены зоны дисбаланса для {symbol}")
+
+    # 4. Order Blocks (блоки ордеров)
+    order_blocks = find_order_blocks(market_data)
+    if order_blocks:
+        logging.info(f"Order Blocks для {symbol}: {order_blocks}")
+    else:
+        logging.warning(f"Order Blocks не найдены для {symbol}")
+
+    # 5. Уровни Фибоначчи
+    fibonacci_levels = calculate_fibonacci(symbol)
+    if fibonacci_levels:
+        logging.info(f"Уровни Фибоначчи для {symbol}: {fibonacci_levels}")
+    else:
+        logging.warning(f"Не удалось рассчитать уровни Фибоначчи для {symbol}")
+
+    # 6. MACD
     macd, signal = calculate_macd(symbol)
     logging.info(f"MACD для {symbol}: {macd}, Signal: {signal}")
 
-    # 3. RSI
+    # 7. RSI
     rsi_value = calculate_rsi(symbol)
     logging.info(f"RSI для {symbol}: {rsi_value}")
 
-    # 4. Bollinger Bands
+    # 8. Bollinger Bands
     upper_band, middle_band, lower_band = calculate_bollinger_bands(symbol)
     logging.info(f"Bollinger Bands для {symbol}: Верхняя: {upper_band}, Средняя: {middle_band}, Нижняя: {lower_band}")
 
-    # 5. ATR (7 дней)
+    # 9. ATR (7 дней)
     atr_value = calculate_atr(symbol, 7)
     logging.info(f"ATR для {symbol}: {atr_value}")
 
-    # 6. Stochastic Oscillator
+    # 10. Stochastic Oscillator
     stochastic_value = calculate_stochastic(symbol)
     logging.info(f"Стохастик для {symbol}: {stochastic_value}")
 
-    # 7. Уровни Фибоначчи (Исправленный вызов функции)
-    fibonacci_levels = calculate_fibonacci(symbol)
-    logging.info(f"Уровни Фибоначчи для {symbol}: {fibonacci_levels}")
-
+    # Возвращаем результат анализа
     return {
         "symbol": symbol,
         "supply_zone": supply_zone,
         "demand_zone": demand_zone,
+        "max_high": max_high,
+        "min_low": min_low,
+        "imbalances": imbalances,
+        "order_blocks": order_blocks,
+        "fibonacci_levels": fibonacci_levels,  # Добавляем уровни Фибоначчи в результат
         "macd": macd,
         "signal": signal,
         "rsi": rsi_value,
@@ -482,8 +784,7 @@ def technical_analysis(symbol):
         "middle_band": middle_band,
         "lower_band": lower_band,
         "atr": atr_value,
-        "stochastic": stochastic_value,
-        "fibonacci_levels": fibonacci_levels
+        "stochastic": stochastic_value
     }
 
 
@@ -584,6 +885,15 @@ def handle_command(command):
         logging.info(f"Джафар: {response}")
         asyncio.run(text_to_speech(response))
 
+market_data_cache = {}
+
+async def get_cached_market_data(symbol):
+    if symbol in market_data_cache:
+        return market_data_cache[symbol]
+    data = await get_market_data(symbol)
+    market_data_cache[symbol] = data
+    return data
+
 import requests
 import logging
 def create_short_telegram_message(result):
@@ -602,11 +912,16 @@ def create_short_telegram_message(result):
                f"ATR: {result['atr']}\n"
                f"Стохастик: {result['stochastic']}\n")
 
+    # Проверка наличия уровней Фибоначчи
+    if 'fibonacci_levels' in result and result['fibonacci_levels']:
+        message += f"Уровни Фибоначчи: {result['fibonacci_levels']}\n"
+
     # Получаем анализ от OpenAI
     openai_analysis = analyze_with_openai(result)
     message += f"\nПрогноз от OpenAI: {openai_analysis}"
 
     return message
+
 
 def create_forecast(result):
     """
@@ -649,18 +964,58 @@ def send_telegram_message(result):
         logging.error(f"Ошибка при отправке сообщения в Telegram: {e}")
 
 
+# Функция для прерывания нажатия клавиши Home
+def check_for_home():
+    while True:
+        if keyboard.is_pressed('home'):  # Меняем проверку на клавишу 'home'
+            toggle_interrupt()
+            while keyboard.is_pressed('home'):
+                pass
+
+# Функция для прерывания
+def toggle_interrupt():
+    global interrupted, awaiting_voice_command
+    interrupted = True
+    awaiting_voice_command = True
+    logging.info("Прерывание активировано.")
+
 # Функция для обработки прерывания программы
 def signal_handler(sig, frame):
     logging.info("Завершение работы...")
     sys.exit(0)
-# Запуск программы
+
+# Функция для обнаружения ключевого слова (например, "Джафар")
+def detect_keyword():
+    logging.info("Запуск Vosk для обнаружения ключевого слова...")
+    rec = vosk.KaldiRecognizer(model, 16000)
+    p = pyaudio.PyAudio()
+    stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=4096)
+    stream.start_stream()
+
+    try:
+        while True:
+            data = stream.read(4096, exception_on_overflow=False)
+            if rec.AcceptWaveform(data):
+                result = json.loads(rec.Result())
+                if "джафар" in result['text'].lower():
+                    logging.info("Ключевое слово обнаружено. Активирую ассистента...")
+                    break
+    except KeyboardInterrupt:
+        logging.info("Остановка потока обнаружения ключевого слова")
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+
+# Главная функция программы
 def main():
     global is_active, interrupted, awaiting_voice_command, continue_conversation
     signal.signal(signal.SIGINT, signal_handler)
-    logging.info("Готов к работе! Нажмите SPACE для отвлечения или скажите 'Джафар' для активации.")
+    logging.info("Готов к работе! Нажмите HOME для отвлечения или скажите 'Джафар' для активации.")
 
-    # Запуск прослушивания нажатия клавиши space
-    threading.Thread(target=check_for_space, daemon=True).start()
+    # Запуск прослушивания нажатия клавиши home
+    threading.Thread(target=check_for_home, daemon=True).start()
 
     while True:
         if continue_conversation:  # Продолжаем диалог после ответа
@@ -676,7 +1031,7 @@ def main():
                 handle_command(command)  # Вызов функции для обработки команд
             awaiting_voice_command = False  # Завершаем режим ожидания после обработки команды
             interrupted = False  # Сбрасываем флаг прерывания
-            logging.info("Ассистент приостановлен. Нажмите SPACE или скажите 'Джафар' для повторной активации.")
+            logging.info("Ассистент приостановлен. Нажмите HOME или скажите 'Джафар' для повторной активации.")
         else:
             detect_keyword()
 
