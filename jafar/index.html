@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATR Analysis</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #4caf50;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            padding: 20px;
+        }
+
+        h1 {
+            color: #4caf50;
+        }
+
+        .info-box {
+            background-color: #0c0b0b;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+        <h1>Ручное усправление</h1>
+        <button onclick="sendCommand('анализ')">Технический Анализ</button>
+        <button onclick="sendCommand('открыть позицию')">Открыть Позицию</button>
+        <script>
+            function sendCommand(command) {
+                fetch('/api/command', {
+                    method: 'POST',
+                    body: JSON.stringify({ command: command }),
+                    headers: { 'Content-Type': 'application/json' }
+                }).then(response => response.json()).then(data => {
+                    console.log("Команда отправлена: ", data);
+                });
+            }
+        </script>
+    <h1>Результаты технического анализа для {{ result.symbol }}</h1>
+    <h2>Рекомендации: {{ final_recommendation }}</h2>
+
+    <table>
+        <tr>
+            <th>Показатель</th>
+            <th>Значение</th>
+        </tr>
+        <tr>
+            <td>Зона предложения</td>
+            <td>{{ result.supply_zone }}</td>
+        </tr>
+        <tr>
+            <td>Зона спроса</td>
+            <td>{{ result.demand_zone }}</td>
+        </tr>
+        <tr>
+            <td>Ключевые зоны ликвидности</td>
+            <td>Максимум: {{ result.max_high }}, Минимум: {{ result.min_low }}</td>
+        </tr>
+        <tr>
+            <td>Зоны дисбаланса</td>
+            <td>{% for imbalance in result.imbalances %}{{ imbalance }}<br>{% endfor %}</td>
+        </tr>
+        <tr>
+            <td>Order Blocks</td>
+            <td>{% for block in result.order_blocks %}{{ block }}<br>{% endfor %}</td>
+        </tr>
+        <tr>
+            <td>Уровни Фибоначчи</td>
+            <td>{% for level, value in result.fibonacci_levels.items() %}{{ level }}: {{ value }}<br>{% endfor %}</td>
+        </tr>
+        <tr>
+            <td>RSI</td>
+            <td>{{ result.rsi }}</td>
+        </tr>
+        <tr>
+            <td>MACD</td>
+            <td>{{ result.macd[-1] }}</td>
+        </tr>
+        <tr>
+            <td>Сигнал MACD</td>
+            <td>{{ result.signal[-1] }}</td>
+        </tr>
+        <tr>
+            <td>Полосы Боллинджера</td>
+            <td>Верхняя: {{ result.upper_band[-1] }}, Средняя: {{ result.middle_band }}, Нижняя: {{
+                result.lower_band[-1] }}</td>
+        </tr>
+        <tr>
+            <td>ATR</td>
+            <td>{{ result.atr }}</td>
+        </tr>
+        <tr>
+            <td>Стохастик</td>
+            <td>K: {{ result.stochastic[0] }}, D: {{ result.stochastic[1] }}</td>
+        </tr>
+        <tr>
+            <td>Средний объем</td>
+            <td>{{ result.average_volume }}</td>
+        </tr>
+    </table>
+    <div class="container">
+        <h1>Технический Анализ: ATR и Дополнительные Данные</h1>
+        <h2>Информация для символа: {{ symbol }}</h2>
+        <table>
+            <tr>
+                <th>Данные</th>
+                <th>Значение</th>
+            </tr>
+            <tr>
+                <td>Текущая цена</td>
+                <td>{{ current_price }}</td>
+            </tr>
+            <tr>
+                <td>ATR (Дневной)</td>
+                <td>{{ daily_atr }}</td>
+            </tr>
+            <tr>
+                <td>ATR (15 минут)</td>
+                <td>{{ m15_atr }}</td>
+            </tr>
+            <tr>
+                <td>Пройденное расстояние (M15)</td>
+                <td>{{ price_range_m15 }}</td>
+            </tr>
+            <tr>
+                <td>Оставшееся до полной реализации ATR (M15)</td>
+                <td>{{ remaining_atr_m15 }}</td>
+            </tr>
+        </table>
+    <div class="container">
+        <h1>ATR Analysis for {{symbol}}</h1>
+        <div class="info-box">
+            <p>Дневной ATR: {{daily_atr}} тиков</p>
+            <p>15-минутный ATR: {{m15_atr}} тиков</p>
+            <p>Текущая цена: {{current_price}}</p>
+        </div>
+    </div>
+<div class="container">
+    <h1>Technical Analysis for {{symbol}}</h1>
+    <div class="info-box">
+        <p><strong>ATR:</strong> {{atr_info}}</p>
+        <p><strong>MACD:</strong> {{macd}}</p>
+        <p><strong>RSI:</strong> {{rsi}}</p>
+        <p><strong>Stochastic:</strong> {{stochastic}}</p>
+        <p><strong>Fibonacci Levels:</strong> {{fib_levels}}</p>
+    </div>
+    <div class="recommendations">
+        <h2>Recommendations:</h2>
+        <p>{{recommendations}}</p>
+    </div>
+</div>
+</body>
+</html>
